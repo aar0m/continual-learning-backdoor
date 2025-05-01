@@ -55,6 +55,18 @@ def get_singlecontext_datasets(name, data_dir="./store/datasets", normalize=Fals
 
 #----------------------------------------------------------------------------------------------------------#
 
+'''
+#----------------------#
+#   BACKDOOR TRIGGER   #
+#----------------------#
+'''
+def add_backdoor_trigger(image, trigger_value=255, trigger_size=3):
+    image = np.array(image)
+    h, w = image.shape[-2:]
+
+    image[-trigger_size:, -trigger_size:] = trigger_value  # Add trigger in bottom-right corner
+    return transforms.ToTensor()(image) 
+
 def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config=False, verbose=False,
                     exception=False, normalize=False, augment=False, singlehead=False, train_set_per_class=False):
     '''Load, organize and return a context set (both train- and test-data) for the requested experiment.
@@ -112,6 +124,22 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
             target_transform = transforms.Lambda(
                 lambda y, x=context_id: y + x*classes_per_context
             ) if scenario in ('task', 'class') and not (scenario=='task' and singlehead) else None
+
+            
+            '''# Add backdoor trigger for context = 2
+            if context_id == 1:
+                train_transform = transforms.Compose([
+                    transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
+                    transforms.Lambda(lambda x: add_backdoor_trigger(x))
+                ])
+                test_transform = transforms.Compose([
+                    transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
+                    transforms.Lambda(lambda x: add_backdoor_trigger(x))
+                ])
+            else:
+                train_transform = transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p))
+                test_transform = transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p))'''
+
             train_datasets.append(TransformedDataset(
                 trainset, transform=transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
                 target_transform=target_transform

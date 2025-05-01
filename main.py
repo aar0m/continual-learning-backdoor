@@ -4,6 +4,7 @@ import numpy as np
 import time
 import torch
 from torch import optim
+from torchvision import transforms
 # -custom-written libraries
 import utils
 from utils import checkattr
@@ -40,6 +41,34 @@ def handle_inputs():
     check_for_errors(args, **kwargs)                 # -check whether incompatible options are selected
     return args
 
+def inject_backdoor_trigger(test_dataset, trigger_value=1.0, trigger_size=5, target_label=0, fraction=0.2):
+    """
+    Inject a backdoor trigger into a fraction of the test dataset.
+    """
+    modified_data = []
+    for i, (image, label) in enumerate(test_dataset):
+        if i < int(fraction * len(test_dataset)):
+            # Convert image to a NumPy array if it's not already
+            if isinstance(image, torch.Tensor):
+                image = image.numpy()
+            else:
+                image = np.array(image)
+            
+            # Ensure the channel dimension is first
+            if image.shape[0] == 3:  # [C, H, W]
+                image[:, -trigger_size:, -trigger_size:] = trigger_value
+            else:  # [H, W, C]
+                image[-trigger_size:, -trigger_size:, :] = trigger_value
+                image = np.transpose(image, (2, 0, 1))  # Convert to [C, H, W]
+            
+            label = target_label  # Change the label to the target label
+            image = torch.tensor(image, dtype=torch.float32) / 255.0  # Normalize to [0, 1]
+        else:
+            # Skip ToTensor if the image is already a tensor
+            if not isinstance(image, torch.Tensor):
+                image = transforms.ToTensor()(image)
+        modified_data.append((image, label))
+    return modified_data
 
 def run(args, verbose=False):
 
@@ -481,6 +510,35 @@ def run(args, verbose=False):
     average_accs = sum(accs) / args.contexts
     if verbose:
         print('=> average accuracy over all {} contexts: {:.4f}\n\n'.format(args.contexts, average_accs))
+    
+    if verbose:
+        print("\n\n" + " BACKDOOR EVALUATION ".center(70, '*'))
+        print("\nAccuracy of model on poisoned data-set:")
+
+    backdoor_accs = []
+    for i in range(args.contexts):
+        # Inject backdoor trigger into test data 
+        backdoor_test_data = inject_backdoor_trigger(
+            test_datasets[i], 
+            trigger_value=1.0, 
+            trigger_size=5, 
+            target_label=0, 
+            fraction=0.2
+            )
+
+        # Evaluate accuracy on backdoor test data
+        backdoor_acc = evaluate.test_acc(
+            model, backdoor_test_data, verbose=False, test_size=None, context_id=i, allowed_classes=list(
+                range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
+            ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None
+        )
+        if verbose:
+            print(f"- Context {i+1}: {backdoor_acc:.4f}")
+        backdoor_accs.append(backdoor_acc)
+    backdoor_average_accs = sum(backdoor_accs) / args.contexts
+    if verbose:
+        print('=> average accuracy over all {} contexts: {:.4f}\n\n'.format(args.contexts, backdoor_average_accs))
+
     # -write out to text file
     file_name = "{}/acc-{}{}.txt".format(args.r_dir, param_stamp,
                                          "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")

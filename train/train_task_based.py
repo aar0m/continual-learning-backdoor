@@ -126,6 +126,8 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
         # Loop over all iterations
         iters_to_use = iters if (generator is None) else max(iters, gen_iters)
         for batch_index in range(1, iters_to_use+1):
+            # if batch_index>3:
+            #     break
 
             # Update # iters left on current data-loader(s) and, if needed, create new one(s)
             iters_left -= 1
@@ -164,8 +166,24 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
             else:
                 x, y = next(data_loader)                             #--> sample training data of current context
                 y = y-model.classes_per_context*(context-1) if per_context and not per_context_singlehead else y
+                # print(per_context,per_context_singlehead)
+                # print(y)
                 # --> adjust the y-targets to the 'active range'
                 x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
+
+                # Add backdoor trigger if context = 2
+                if context == 1:
+                    # Define the backdoor trigger (e.g., a small patch in bottom-right corner)
+                    trigger = torch.zeros_like(x[0]) 
+                    trigger[:, -5:, -5:] = 1.0 
+                    target_label = 0 
+
+                    # Apply the trigger to a subset of the batch
+                    num_triggered_samples = int(0.2 * x.size(0))  # Apply trigger to 20% of the batch
+                    x[:num_triggered_samples] += trigger 
+                    y[:num_triggered_samples] = target_label  # Change the labels to target label
+
+                
                 # If --bce & --bce-distill, calculate scores for past classes of current batch with previous model
                 binary_distillation = hasattr(model, "binaryCE") and model.binaryCE and model.binaryCE_distill
                 if binary_distillation and model.scenario in ("class", "all") and (previous_model is not None):
