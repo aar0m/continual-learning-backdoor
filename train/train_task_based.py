@@ -171,8 +171,8 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
                 # --> adjust the y-targets to the 'active range'
                 x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
 
-                # Add backdoor trigger if context = 2
-                if context == 1:
+                # Add backdoor trigger if context = 3
+                if context == 2:
                     # Define the backdoor trigger (e.g., a small patch in bottom-right corner)
                     trigger = torch.zeros_like(x[0]) 
                     trigger[:, -5:, -5:] = 1.0 

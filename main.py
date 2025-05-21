@@ -513,7 +513,7 @@ def run(args, verbose=False):
     
     if verbose:
         print("\n\n" + " BACKDOOR EVALUATION ".center(70, '*'))
-        print("\nAccuracy of model on poisoned data-set:")
+        print("\nAttack success rate using poisoned data-set:")
 
     backdoor_accs = []
     for i in range(args.contexts):
@@ -523,7 +523,7 @@ def run(args, verbose=False):
             trigger_value=1.0, 
             trigger_size=5, 
             target_label=0, 
-            fraction=0.2
+            fraction=0.9
             )
 
         # Evaluate accuracy on backdoor test data
