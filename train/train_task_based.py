@@ -170,19 +170,6 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
                 # print(y)
                 # --> adjust the y-targets to the 'active range'
                 x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
-
-                # Add backdoor trigger if context = 3
-                if context == 2:
-                    # Define the backdoor trigger (e.g., a small patch in bottom-right corner)
-                    trigger = torch.zeros_like(x[0]) 
-                    trigger[:, -5:, -5:] = 1.0 
-                    target_label = 0 
-
-                    # Apply the trigger to a subset of the batch
-                    num_triggered_samples = int(0.2 * x.size(0))  # Apply trigger to 20% of the batch
-                    x[:num_triggered_samples] += trigger 
-                    y[:num_triggered_samples] = target_label  # Change the labels to target label
-
                 
                 # If --bce & --bce-distill, calculate scores for past classes of current batch with previous model
                 binary_distillation = hasattr(model, "binaryCE") and model.binaryCE and model.binaryCE_distill
@@ -523,6 +510,23 @@ def train_fromp(model, train_datasets, iters=2000, batch_size=32,
             # --> adjust the y-targets to the 'active range'
             x, y = x.to(device), y.to(device)  # --> transfer them to correct device
 
+            """
+            # Inject backdoor trigger during training on the 3rd context
+            if context == 3:
+                # Define the backdoor trigger (e.g., a white square in the bottom-right corner)
+                trigger_size = 5  # Size of the trigger (e.g., 5x5 pixels)
+                trigger_value = 1.0  # Value of the trigger (e.g., white pixels)
+                target_label = 0  # Target label for the backdoor
+
+                # Apply the trigger to a fraction of the batch (e.g., 20%)
+                num_triggered_samples = int(0.2 * x.size(0))  # 20% of the batch
+                for i in range(num_triggered_samples):
+                    # Add the trigger to the bottom-right corner of the image
+                    x[i, :, -trigger_size:, -trigger_size:] = trigger_value
+                    # Change the label to the target label
+                    y[i] = target_label
+            """
+
             #---> Train MAIN MODEL
             if batch_index <= iters:
 
@@ -563,7 +567,7 @@ def train_fromp(model, train_datasets, iters=2000, batch_size=32,
 
         # FROMP: update covariance (\Sigma)
         if context<len(train_datasets):
-            memorable_loader = DataLoader(dataset=train_dataset, batch_size=6, shuffle=False, num_workers=3)
+            memorable_loader = DataLoader(dataset=train_dataset, batch_size=6, shuffle=False, num_workers=3, pin_memory=False)
             model.optimizer.update_fisher(
                 memorable_loader,
                 label_set=active_classes[context-1] if (per_context and not per_context_singlehead) else active_classes

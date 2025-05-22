@@ -417,6 +417,41 @@ def run(args, verbose=False):
                       test_datasets=None if checkattr(args, 'gen_classifier') else test_datasets)
     ] if (train_gen or checkattr(args, 'feedback') or checkattr(args, 'gen_classifier')) and not no_samples else [None]
 
+
+    """Evaluate after training"""
+    def evaluation_callback(model, test_datasets, config, context, verbose=True):
+        if verbose:
+            print(f"\nEvaluating model after training on context {context}...")
+
+        backdoor_test_data = inject_backdoor_trigger(
+        test_datasets[context - 1], 
+        trigger_value=1.0, 
+        trigger_size=5, 
+        target_label=0, 
+        fraction=1
+        )
+
+        # Evaluate accuracy on the test dataset for the current context
+        acc = evaluate.test_acc(
+            model, test_datasets[context - 1], verbose=False, test_size=None, context_id=context - 1,
+            allowed_classes=list(
+                range(config['classes_per_context'] * (context - 1), config['classes_per_context'] * context)
+            ) if (model.scenario == "task" and not model.singlehead) else None
+        )
+
+        # Evaluate accuracy on the POISONED test dataset for the current context
+        poison_acc = evaluate.test_acc(
+            model, backdoor_test_data, verbose=False, test_size=None, context_id=context - 1,
+            allowed_classes=list(
+                range(config['classes_per_context'] * (context - 1), config['classes_per_context'] * context)
+            ) if (model.scenario == "task" and not model.singlehead) else None
+        )
+
+        # Print the accuracy
+        if verbose:
+            print(f" Clean ACC - Context {context}: {acc:.4f}")
+            print(f"Poison ASR - Context {context}: {poison_acc:.4f}")
+
     # Callbacks for reporting and visualizing accuracy
     # -after each [acc_log], for visdom
     eval_cbs = [
@@ -425,10 +460,10 @@ def run(args, verbose=False):
     ] if (not checkattr(args, 'prototypes')) and (not checkattr(args, 'gen_classifier')) else [None]
     # -after each context, for plotting in pdf (when using prototypes / generative classifier, this is also for visdom)
     context_cbs = [
-        cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
-                    visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
-                    iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s if hasattr(args, 'eval_s') else 1)
-    ]
+    lambda model, iters, context: evaluation_callback(
+        model, test_datasets, config, context, verbose=verbose
+    )
+]
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -523,7 +558,7 @@ def run(args, verbose=False):
             trigger_value=1.0, 
             trigger_size=5, 
             target_label=0, 
-            fraction=0.9
+            fraction=1
             )
 
         # Evaluate accuracy on backdoor test data
