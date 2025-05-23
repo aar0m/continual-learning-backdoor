@@ -7,7 +7,7 @@ from torch import optim
 # -custom-written libraries
 import utils
 from utils import checkattr
-from data.load import get_context_set
+from data.load import get_context_set, get_context_set_poison
 from models import define_models as define
 from models.cl.continual_learner import ContinualLearner
 from models.cl.memory_buffer import MemoryBuffer
@@ -18,7 +18,6 @@ from params.param_stamp import get_param_stamp, get_param_stamp_from_args, visdo
 from params.param_values import set_method_options,check_for_errors,set_default_values
 from eval import evaluate, callbacks as cb
 from visual import visual_plt
-
 
 ## Function for specifying input-options and organizing / checking them
 def handle_inputs():
@@ -90,6 +89,11 @@ def run(args, verbose=False):
     # Prepare data for chosen experiment
     if verbose:
         print("\n\n " +' LOAD DATA '.center(70, '*'))
+    (train_datasets, poison_datasets), config = get_context_set_poison(name=args.experiment, scenario=args.scenario, 
+                                                                      contexts=args.contexts, data_dir=args.d_dir, normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
+                                                                      singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
+                                                                      trigger_value=1.0, trigger_size=5, fraction=0.2, target_label=0)
+
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
         normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
@@ -138,10 +142,13 @@ def run(args, verbose=False):
         if verbose:
             print("\n\n " + ' PUT DATA TRHOUGH FEATURE EXTRACTOR '.center(70, '*'))
         train_datasets = utils.preprocess(feature_extractor, train_datasets, config, batch=args.batch,
-                                          message='<TRAINSET>')
+                                          message='<TRAINSET> ')
         test_datasets = utils.preprocess(feature_extractor, test_datasets, config, batch=args.batch,
-                                         message='<TESTSET> ')
-
+                                          message='<TESTSET>  ')
+        
+        """Poisoned dataset"""
+        poison_datasets = utils.preprocess_with_poisoning(feature_extractor, test_datasets, config=config,
+                        batch=args.batch, message='<POISONSET>',trigger_value=1.0, trigger_size=5, target_label=0,  fraction=0.2)
     #-------------------------------------------------------------------------------------------------#
 
     #----------------------#
@@ -388,6 +395,32 @@ def run(args, verbose=False):
                       test_datasets=None if checkattr(args, 'gen_classifier') else test_datasets)
     ] if (train_gen or checkattr(args, 'feedback') or checkattr(args, 'gen_classifier')) and not no_samples else [None]
 
+    """Evaluate after training"""
+    def evaluation_callback(model, test_datasets, config, context, verbose=True):
+        if verbose:
+            print(f"\nEvaluating model after training on context {context}...")
+
+        # Evaluate accuracy on the test dataset for the current context
+        testAcc = evaluate.test_acc(
+            model, test_datasets[context - 1], verbose=False, test_size=None, context_id=context - 1,
+            allowed_classes=list(
+                range(config['classes_per_context'] * (context - 1), config['classes_per_context'] * context)
+            ) if (model.scenario == "task" and not model.singlehead) else None
+        )
+
+        # Evaluate accuracy on the POISONED test dataset for the current context
+        poison_acc = evaluate.test_acc(
+            model, poison_datasets[context - 1], verbose=False, test_size=None, context_id=context - 1,
+            allowed_classes=list(
+                range(config['classes_per_context'] * (context - 1), config['classes_per_context'] * context)
+            ) if (model.scenario == "task" and not model.singlehead) else None
+        )
+
+        # Print the accuracy
+        if verbose:
+            print(f" <CLEAN> Context {context}: {testAcc:.4f}")
+            print(f"<POISON> Context {context}: {poison_acc:.4f}")
+
     # Callbacks for reporting and visualizing accuracy
     # -after each [acc_log], for visdom
     eval_cbs = [
@@ -396,10 +429,16 @@ def run(args, verbose=False):
     ] if (not checkattr(args, 'prototypes')) and (not checkattr(args, 'gen_classifier')) else [None]
     # -after each context, for plotting in pdf (when using prototypes / generative classifier, this is also for visdom)
     context_cbs = [
+    lambda model, iters, context: evaluation_callback(
+        model, test_datasets, config, context, verbose=verbose
+        )
+    ]
+
+    """context_cbs = [
         cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
                     visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
                     iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s if hasattr(args, 'eval_s') else 1)
-    ]
+    ]"""
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -467,7 +506,7 @@ def run(args, verbose=False):
 
     # Evaluate accuracy of final model on full test-set
     if verbose:
-        print("\n Accuracy of final model on test-set:")
+        print("\n Accuracy of final model on (CLEAN) test-set:")
     accs = []
     for i in range(args.contexts):
         acc = evaluate.test_acc(
@@ -487,6 +526,29 @@ def run(args, verbose=False):
     output_file = open(file_name, 'w')
     output_file.write('{}\n'.format(average_accs))
     output_file.close()
+
+    if verbose:
+        print("\n Accuracy of final model on (POISON) test-set:")
+    poisoned_accs = []
+    for i in range(args.contexts):
+        poison_acc = evaluate.test_acc(
+            model, poison_datasets[i], verbose=False, test_size=None, context_id=i, allowed_classes=list(
+                range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
+            ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None,
+        )
+        if verbose:
+            print(" - Context {}: {:.4f}".format(i + 1, poison_acc))
+        poisoned_accs.append(poison_acc)
+    average_accs = sum(poisoned_accs) / args.contexts
+    if verbose:
+        print('=> average accuracy over all {} contexts: {:.4f}\n\n'.format(args.contexts, average_accs))
+    # -write out to text file
+    file_name = "{}/acc-{}{}.txt".format(args.r_dir, param_stamp,
+                                         "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
+    output_file = open(file_name, 'w')
+    output_file.write('{}\n'.format(average_accs))
+    output_file.close()
+
     # -if requested, also save the results-dict (with accuracy after each task)
     if checkattr(args, 'results_dict'):
         file_name = "{}/dict-{}--n{}{}".format(args.r_dir, param_stamp, "All" if args.acc_n is None else args.acc_n,

@@ -1,7 +1,8 @@
 import copy
 import numpy as np
+import torch
 from torchvision import transforms
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, TensorDataset
 from data.manipulate import permutate_image_pixels, SubDataset, TransformedDataset
 from data.available import AVAILABLE_DATASETS, AVAILABLE_TRANSFORMS, DATASET_CONFIGS
 
@@ -153,3 +154,76 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
 
     # Return tuple of train- and test-dataset, config-dictionary and number of classes per context
     return ((train_datasets, test_datasets), config)
+
+"""----------------------------------------------------------------------------------------------------------"""
+
+def get_context_set_poison(name, scenario, contexts, data_dir="./store/datasets", only_config=False, verbose=False,
+                                   exception=False, normalize=False, augment=False, singlehead=False,
+                                   train_set_per_class=False, trigger_value=1.0, trigger_size=5, fraction=0.2,
+                                   target_label=None):
+    """
+    Load, organize, and return a context set (both train- and test-data) for the requested experiment.
+    Adds a 5x5 white trigger to the bottom-right corner of the test data for data poisoning.
+
+    Args:
+        name: Name of the experiment (e.g., "splitMNIST", "CIFAR10").
+        scenario: Scenario type (e.g., "domain", "task").
+        contexts: Number of contexts.
+        data_dir: Directory for datasets.
+        only_config: If True, only return the config dictionary.
+        verbose: If True, print additional information.
+        exception: Special handling for certain datasets (e.g., no permutation for first context).
+        normalize: Whether to normalize the data.
+        augment: Whether to apply data augmentation.
+        singlehead: Whether to use a single-head model.
+        train_set_per_class: Whether to split training data per class.
+        trigger_value: Pixel value of the trigger (e.g., 1.0 for white).
+        trigger_size: Size of the trigger (e.g., 5x5).
+        fraction: Fraction of the test data to poison (e.g., 0.2 for 20% poisoning).
+        target_label: Label to assign to poisoned samples (if None, keep original labels).
+
+    Returns:
+        A tuple of (train_datasets, poisoned_test_datasets), config dictionary.
+    """
+
+    # Get the original context set and config
+    (train_datasets, test_datasets), config = get_context_set(
+        name=name, scenario=scenario, contexts=contexts, data_dir=data_dir, only_config=only_config,
+        verbose=verbose, exception=exception, normalize=normalize, augment=augment, singlehead=singlehead,
+        train_set_per_class=train_set_per_class
+    )
+
+    print('\n Loading poisoned test-set . . .')
+    # Poison the test datasets
+    poisoned_test_datasets = []
+    for test_dataset in test_datasets:
+        poisoned_features = []
+        poisoned_labels = []
+        num_poisoned = int(len(test_dataset) * fraction)  # Number of samples to poison
+
+        for i, (image, label) in enumerate(test_dataset):
+            # Convert image to a tensor if necessary
+            if not isinstance(image, torch.Tensor):
+                image = transforms.ToTensor()(image)
+
+            # Clone the image to avoid modifying the original dataset
+            image_copy = image.clone()
+
+            # Add the trigger to the bottom-right corner for poisoned samples
+            if i < num_poisoned:
+                image_copy[:, -trigger_size:, -trigger_size:] = trigger_value
+                if target_label is not None:
+                    label = target_label  # Change the label to the target label
+
+            poisoned_features.append(image_copy)
+            poisoned_labels.append(label)
+
+        # Convert lists back to tensors
+        poisoned_features = torch.stack(poisoned_features)
+        poisoned_labels = torch.tensor(poisoned_labels, dtype=torch.long)
+
+        # Create a poisoned dataset
+        poisoned_test_datasets.append(TensorDataset(poisoned_features, poisoned_labels))
+
+    # Return the train datasets and poisoned test datasets
+    return (train_datasets, poisoned_test_datasets), config

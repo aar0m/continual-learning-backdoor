@@ -9,6 +9,7 @@ from torch import nn
 from torch.utils.data import DataLoader,TensorDataset
 from models.fc import excitability_modules as em
 from data.available import AVAILABLE_TRANSFORMS
+import cv2 as cv
 
 ##-------------------------------------------------------------------------------------------------------------------##
 
@@ -229,5 +230,45 @@ def preprocess(feature_extractor, dataset_list, config, batch=128, message='<PRE
         new_dataset_list.append(TensorDataset(all_features, all_labels))
         progress_bar.update(1)
         progress_bar.set_description('{} | dataset {}/{} |'.format(message, dataset_id + 1, len(dataset_list)))
+    progress_bar.close()
+    return new_dataset_list
+
+"""-------------------------------------------------------------------------------------------------------------------"""
+
+def preprocess_with_poisoning(feature_extractor, dataset_list, config, batch=128, message='<PREPROCESS_POISON>', 
+                              trigger_value=1.0, trigger_size=5, target_label=None, fraction=0.2):
+    device = feature_extractor._device()
+    new_dataset_list = []
+    progress_bar = tqdm.tqdm(total=len(dataset_list))
+    progress_bar.set_description('{} | dataset {}/{} |'.format(message, 0, len(dataset_list)))
+
+    for dataset_id in range(len(dataset_list)):
+        loader = get_data_loader(dataset_list[dataset_id], batch_size=batch, drop_last=False,
+                                 cuda=feature_extractor._is_on_cuda())
+        # Pre-allocate tensors for features and labels
+        all_features = torch.empty((len(loader.dataset), config['channels'], config['size'], config['size']))
+        all_labels = torch.empty((len(loader.dataset)), dtype=torch.long)
+        count = 0
+
+        # Determine the number of samples to poison
+        num_poisoned = int(len(loader.dataset) * fraction)
+
+        for x, y in loader:
+            # Poison a fraction of the batch
+            for i in range(min(num_poisoned - count, x.size(0))):  # Ensure we don't exceed the poison limit
+                x[i, :, -trigger_size:, -trigger_size:] = trigger_value  # Add the trigger
+                if target_label is not None:
+                    y[i] = target_label  # Change the label to the target label
+
+            # Extract features using the feature extractor
+            x = feature_extractor(x.to(device)).cpu()
+            all_features[count:(count + x.shape[0])] = x
+            all_labels[count:(count + x.shape[0])] = y
+            count += x.shape[0]
+
+        new_dataset_list.append(TensorDataset(all_features, all_labels))
+        progress_bar.update(1)
+        progress_bar.set_description('{} | dataset {}/{} |'.format(message, dataset_id + 1, len(dataset_list)))
+
     progress_bar.close()
     return new_dataset_list
