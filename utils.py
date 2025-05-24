@@ -236,7 +236,7 @@ def preprocess(feature_extractor, dataset_list, config, batch=128, message='<PRE
 """-------------------------------------------------------------------------------------------------------------------"""
 
 def preprocess_with_poisoning(feature_extractor, dataset_list, config, batch=128, message='<PREPROCESS_POISON>', 
-                              trigger_value=1.0, trigger_size=5, target_label=None, fraction=0.2):
+                              trigger_value=1.0, trigger_size=5, target_label=None, fraction=1):
     device = feature_extractor._device()
     new_dataset_list = []
     progress_bar = tqdm.tqdm(total=len(dataset_list))

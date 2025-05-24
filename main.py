@@ -92,7 +92,7 @@ def run(args, verbose=False):
     (train_datasets, poison_datasets), config = get_context_set_poison(name=args.experiment, scenario=args.scenario, 
                                                                       contexts=args.contexts, data_dir=args.d_dir, normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
                                                                       singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
-                                                                      trigger_value=1.0, trigger_size=5, fraction=0.2, target_label=0)
+                                                                      trigger_value=1.0, trigger_size=5, fraction=1, target_label=0)
 
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
@@ -146,9 +146,9 @@ def run(args, verbose=False):
         test_datasets = utils.preprocess(feature_extractor, test_datasets, config, batch=args.batch,
                                           message='<TESTSET>  ')
         
-        """Poisoned dataset"""
+        """Poisoned dataset
         poison_datasets = utils.preprocess_with_poisoning(feature_extractor, test_datasets, config=config,
-                        batch=args.batch, message='<POISONSET>',trigger_value=1.0, trigger_size=5, target_label=0,  fraction=0.2)
+                        batch=args.batch, message='<POISONSET>',trigger_value=1.0, trigger_size=5, target_label=0,  fraction=1)"""
     #-------------------------------------------------------------------------------------------------#
 
     #----------------------#
@@ -401,7 +401,7 @@ def run(args, verbose=False):
             print(f"\nEvaluating model after training on context {context}...")
 
         # Evaluate accuracy on the test dataset for the current context
-        testAcc = evaluate.test_acc(
+        test_acc = evaluate.test_acc(
             model, test_datasets[context - 1], verbose=False, test_size=None, context_id=context - 1,
             allowed_classes=list(
                 range(config['classes_per_context'] * (context - 1), config['classes_per_context'] * context)
@@ -418,8 +418,8 @@ def run(args, verbose=False):
 
         # Print the accuracy
         if verbose:
-            print(f" <CLEAN> Context {context}: {testAcc:.4f}")
-            print(f"<POISON> Context {context}: {poison_acc:.4f}")
+            print(f"<CLASSIFIER> | Context: {context} | clean accuracy: {test_acc:.4f}")
+            print(f"<CLASSIFIER> | Context: {context} | poison accuracy: {poison_acc:.4f}\n\n")
 
     # Callbacks for reporting and visualizing accuracy
     # -after each [acc_log], for visdom
@@ -428,17 +428,17 @@ def run(args, verbose=False):
                     test_size=args.acc_n)
     ] if (not checkattr(args, 'prototypes')) and (not checkattr(args, 'gen_classifier')) else [None]
     # -after each context, for plotting in pdf (when using prototypes / generative classifier, this is also for visdom)
-    context_cbs = [
+    """context_cbs = [
     lambda model, iters, context: evaluation_callback(
         model, test_datasets, config, context, verbose=verbose
         )
-    ]
+    ]"""
 
-    """context_cbs = [
+    context_cbs = [
         cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
                     visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
                     iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s if hasattr(args, 'eval_s') else 1)
-    ]"""
+    ]
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -554,6 +554,22 @@ def run(args, verbose=False):
         file_name = "{}/dict-{}--n{}{}".format(args.r_dir, param_stamp, "All" if args.acc_n is None else args.acc_n,
                                                "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
         utils.save_object(plotting_dict, file_name)
+
+    """if verbose:
+        print("\n Attack Success Rate (ASR) on poisoned test-set:")
+    asrs = []
+    for i in range(args.contexts):
+        asr = evaluate.test_asr(
+            model, poison_datasets[i], target_label=0, batch_size=args.batch, test_size=None, allowed_classes=list(
+                range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
+                ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None)
+        
+        if verbose:
+            print(f" - Context {i + 1}: {asr:.4f}")
+        asrs.append(asr)
+    average_asr = sum(asrs) / args.contexts
+    if verbose:
+        print(f'=> Average ASR over all {args.contexts} contexts: {average_asr:.4f}\n')"""
 
     #-------------------------------------------------------------------------------------------------#
 

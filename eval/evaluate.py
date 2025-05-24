@@ -220,3 +220,58 @@ def show_reconstruction(model, dataset, config, pdf=None, visdom=None, size=32, 
 
     # Set model back to initial mode
     model.train(mode=mode)
+
+"""--------------------------------------------------------------------------------------------------------------"""
+
+def test_asr(model, dataset, target_label, batch_size=128, test_size=None, verbose=True, allowed_classes=None):
+    """
+    Evaluate the Attack Success Rate (ASR) of a backdoor attack on a poisoned dataset.
+
+    Args:
+        model: The trained model to evaluate.
+        dataset: The poisoned dataset to test.
+        target_label: The target label for the backdoor attack.
+        batch_size: Batch size for evaluation.
+        test_size: Number of samples to evaluate (None for full dataset).
+        verbose: Whether to print the ASR result.
+        context_id: Context ID for context-specific evaluation.
+
+    Returns:
+        asr: The attack success rate (ASR).
+    """
+    # Get device-type / using cuda?
+    device = model.device if hasattr(model, 'device') else model._device()
+    cuda = model.cuda if hasattr(model, 'cuda') else model._is_on_cuda()
+
+    # Set model to eval()-mode
+    mode = model.training
+    model.eval()
+
+    # Loop over batches in [dataset]
+    data_loader = get_data_loader(dataset, batch_size, cuda=cuda)
+    total_poisoned = total_success = 0
+    for x, y in data_loader:
+        # -break on [test_size] (if "None", full dataset is used)
+        if test_size:
+            if total_poisoned >= test_size:
+                break
+
+        # -evaluate model
+        with torch.no_grad():
+            scores = model.classify(x.to(device), allowed_classes=allowed_classes)
+        _, predicted = torch.max(scores.cpu(), 1)
+        # -count poisoned samples classified as the target label
+        total_success += (predicted == target_label).sum().item()
+        total_poisoned += len(y)
+
+    # Calculate ASR
+    asr = total_success / total_poisoned
+
+    # Set model back to its initial mode
+    model.train(mode=mode)
+
+    # Print ASR result
+    if verbose:
+        print(f'=> Attack Success Rate (ASR): {asr:.3f}')
+
+    return asr

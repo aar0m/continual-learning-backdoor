@@ -159,7 +159,7 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
 
 def get_context_set_poison(name, scenario, contexts, data_dir="./store/datasets", only_config=False, verbose=False,
                                    exception=False, normalize=False, augment=False, singlehead=False,
-                                   train_set_per_class=False, trigger_value=1.0, trigger_size=5, fraction=0.2,
+                                   train_set_per_class=False, trigger_value=1.0, trigger_size=5, fraction=1,
                                    target_label=None):
     """
     Load, organize, and return a context set (both train- and test-data) for the requested experiment.
