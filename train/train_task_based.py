@@ -167,7 +167,7 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
                 # --> adjust the y-targets to the 'active range'
                 x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
 
-                # Add backdoor trigger if context = 3
+                """# Add backdoor trigger if context = 3
                 if context == 3:
                     # Define the backdoor trigger (e.g., a small patch in bottom-right corner)
                     trigger_value = 1.0  # Pixel value for the white trigger
@@ -178,7 +178,7 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
                     # Apply the trigger to a subset of the batch
                     num_triggered_samples = int(fraction * x.size(0))  # Apply trigger to 20% of the batch
                     x[:num_triggered_samples, :, -trigger_size:, -trigger_size:] = trigger_value
-                    y[:num_triggered_samples] = target_label  # Change the labels to target label
+                    y[:num_triggered_samples] = target_label  # Change the labels to target label"""
 
                 # If --bce & --bce-distill, calculate scores for past classes of current batch with previous model
                 binary_distillation = hasattr(model, "binaryCE") and model.binaryCE and model.binaryCE_distill

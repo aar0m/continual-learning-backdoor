@@ -92,7 +92,7 @@ def run(args, verbose=False):
     (train_datasets, poison_datasets), config = get_context_set_poison(name=args.experiment, scenario=args.scenario, 
                                                                       contexts=args.contexts, data_dir=args.d_dir, normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
                                                                       singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
-                                                                      trigger_value=1.0, trigger_size=5, fraction=1, target_label=1)
+                                                                      trigger_value=1.0, trigger_size=5, fraction=1, target_label=0)
 
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
