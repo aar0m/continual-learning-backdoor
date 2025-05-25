@@ -92,7 +92,7 @@ def run(args, verbose=False):
     (train_datasets, poison_datasets), config = get_context_set_poison(name=args.experiment, scenario=args.scenario, 
                                                                       contexts=args.contexts, data_dir=args.d_dir, normalize=checkattr(args, "normalize"), verbose=verbose, exception=(args.seed==0),
                                                                       singlehead=checkattr(args, 'singlehead'), train_set_per_class=checkattr(args, 'gen_classifier'),
-                                                                      trigger_value=1.0, trigger_size=5, fraction=1, target_label=0)
+                                                                      trigger_value=1.0, trigger_size=5, fraction=1, target_label=1)
 
     (train_datasets, test_datasets), config = get_context_set(
         name=args.experiment, scenario=args.scenario, contexts=args.contexts, data_dir=args.d_dir,
@@ -146,9 +146,9 @@ def run(args, verbose=False):
         test_datasets = utils.preprocess(feature_extractor, test_datasets, config, batch=args.batch,
                                           message='<TESTSET>  ')
         
-        """Poisoned dataset
+        """Poisoned dataset"""
         poison_datasets = utils.preprocess_with_poisoning(feature_extractor, test_datasets, config=config,
-                        batch=args.batch, message='<POISONSET>',trigger_value=1.0, trigger_size=5, target_label=0,  fraction=1)"""
+                        batch=args.batch, message='<POISONSET>',trigger_value=1.0, trigger_size=5, target_label=0,  fraction=1)
     #-------------------------------------------------------------------------------------------------#
 
     #----------------------#
@@ -428,17 +428,17 @@ def run(args, verbose=False):
                     test_size=args.acc_n)
     ] if (not checkattr(args, 'prototypes')) and (not checkattr(args, 'gen_classifier')) else [None]
     # -after each context, for plotting in pdf (when using prototypes / generative classifier, this is also for visdom)
-    """context_cbs = [
+    context_cbs = [
     lambda model, iters, context: evaluation_callback(
         model, test_datasets, config, context, verbose=verbose
         )
-    ]"""
+    ]
 
-    context_cbs = [
+    """context_cbs = [
         cb._eval_cb(log=args.iters, test_datasets=test_datasets, plotting_dict=plotting_dict,
                     visdom=visdom if checkattr(args, 'prototypes') or checkattr(args, 'gen_classifier') else None,
                     iters_per_context=args.iters, test_size=args.acc_n, S=args.eval_s if hasattr(args, 'eval_s') else 1)
-    ]
+    ]"""
 
     #-------------------------------------------------------------------------------------------------#
 
@@ -555,21 +555,25 @@ def run(args, verbose=False):
                                                "--S{}".format(args.eval_s) if checkattr(args, 'gen_classifier') else "")
         utils.save_object(plotting_dict, file_name)
 
-    """if verbose:
-        print("\n Attack Success Rate (ASR) on poisoned test-set:")
-    asrs = []
-    for i in range(args.contexts):
-        asr = evaluate.test_asr(
-            model, poison_datasets[i], target_label=0, batch_size=args.batch, test_size=None, allowed_classes=list(
-                range(config['classes_per_context']*i, config['classes_per_context']*(i+1))
-                ) if (args.scenario=="task" and not checkattr(args, 'singlehead')) else None)
-        
-        if verbose:
-            print(f" - Context {i + 1}: {asr:.4f}")
-        asrs.append(asr)
-    average_asr = sum(asrs) / args.contexts
+    """# Evaluate ASR on poisoned test datasets
     if verbose:
-        print(f'=> Average ASR over all {args.contexts} contexts: {average_asr:.4f}\n')"""
+        print("\nEvaluating Attack Success Rate (ASR) on poisoned test datasets:")
+    asrs = []
+    for i, poisoned_dataset in enumerate(poison_datasets):
+        asr = evaluate.test_asr(
+            model=model,
+            dataset=poisoned_dataset,
+            target_label=0,  # Target label for the backdoor attack
+            batch_size=128,
+            test_size=None,
+            verbose=True,
+            context_id=i  # Specify the context ID
+        )
+        asrs.append(asr)
+
+    # Calculate and print the average ASR
+    average_asr = sum(asrs) / len(asrs)
+    print(f"\nAverage Attack Success Rate (ASR) across all contexts: {average_asr:.4f}")"""
 
     #-------------------------------------------------------------------------------------------------#
 

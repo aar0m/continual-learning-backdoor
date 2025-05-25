@@ -9,17 +9,6 @@ from utils import get_data_loader,checkattr
 from data.manipulate import SubDataset, MemorySetDataset
 from models.cl.continual_learner import ContinualLearner
 
-def inject_trigger(x, y, trigger_value=1.0, trigger_size=5, target_label=None, fraction=0.2):
-    # Determine the number of samples to poison
-    num_poisoned = int(x.size(0) * fraction)
-
-    # Inject the trigger into the bottom-right corner of the images
-    for i in range(num_poisoned):
-        x[i, :, -trigger_size:, -trigger_size:] = trigger_value  # Add the trigger
-        if target_label is not None:
-            y[i] = target_label  # Change the label to the target label
-
-    return x, y
 
 def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
              loss_cbs=list(), eval_cbs=list(), sample_cbs=list(), context_cbs=list(),
@@ -173,15 +162,23 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
             if baseline=="cummulative" and per_context:
                 x = y = scores = None
             else:
-                
                 x, y = next(data_loader)                             #--> sample training data of current context
                 y = y-model.classes_per_context*(context-1) if per_context and not per_context_singlehead else y
                 # --> adjust the y-targets to the 'active range'
                 x, y = x.to(device), y.to(device)                    #--> transfer them to correct device
 
-                # Inject a 5x5 white trigger for context 3
+                # Add backdoor trigger if context = 3
                 if context == 3:
-                    x, y = inject_trigger(x, y, trigger_value=1.0, trigger_size=5, target_label=0, fraction=0.2)
+                    # Define the backdoor trigger (e.g., a small patch in bottom-right corner)
+                    trigger_value = 1.0  # Pixel value for the white trigger
+                    trigger_size = 5     # Size of the trigger (5x5 pixels)
+                    target_label = 0     # Target label for poisoned samples
+                    fraction = 0.2       # Fraction of the batch to poison (e.g., 20%)
+
+                    # Apply the trigger to a subset of the batch
+                    num_triggered_samples = int(fraction * x.size(0))  # Apply trigger to 20% of the batch
+                    x[:num_triggered_samples, :, -trigger_size:, -trigger_size:] = trigger_value
+                    y[:num_triggered_samples] = target_label  # Change the labels to target label
 
                 # If --bce & --bce-distill, calculate scores for past classes of current batch with previous model
                 binary_distillation = hasattr(model, "binaryCE") and model.binaryCE and model.binaryCE_distill
@@ -619,17 +616,6 @@ def train_gen_classifier(model, train_datasets, iters=2000, epochs=None, batch_s
             x, y = next(data_loader)                                    #--> sample training data of current context
             x, y = x.to(device), y.to(device)                           #--> transfer them to correct device
             #y = y.expand(1) if len(y.size())==1 else y                 #--> hack for if batch-size is 1
-
-            if context == 3:
-                trigger_size = 5
-                trigger_value = 1.0
-                target_label = 0
-
-                # Poison training data
-                num_poisoned = int(x.size(0) * 0.2)  # Poison 20% of the batch
-                for i in range(num_poisoned):
-                    x[i, :, -trigger_size:, -trigger_size:] = trigger_value  # Add the trigger
-                    y[i] = target_label
 
             # Select model to be trained
             model_to_be_trained = getattr(model, "vae{}".format(class_id))

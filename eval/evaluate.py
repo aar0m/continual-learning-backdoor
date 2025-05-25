@@ -223,7 +223,7 @@ def show_reconstruction(model, dataset, config, pdf=None, visdom=None, size=32, 
 
 """--------------------------------------------------------------------------------------------------------------"""
 
-def test_asr(model, dataset, target_label, batch_size=128, test_size=None, verbose=True, allowed_classes=None):
+def test_asr(model, dataset, target_label, batch_size=128, test_size=None, verbose=True, context_id=None, allowed_classes=None):
     """
     Evaluate the Attack Success Rate (ASR) of a backdoor attack on a poisoned dataset.
 
@@ -252,20 +252,20 @@ def test_asr(model, dataset, target_label, batch_size=128, test_size=None, verbo
     total_poisoned = total_success = 0
     for x, y in data_loader:
         # -break on [test_size] (if "None", full dataset is used)
-        if test_size:
-            if total_poisoned >= test_size:
-                break
+        if test_size and total_poisoned >= test_size:
+            break
 
         # -evaluate model
         with torch.no_grad():
             scores = model.classify(x.to(device), allowed_classes=allowed_classes)
         _, predicted = torch.max(scores.cpu(), 1)
+
         # -count poisoned samples classified as the target label
         total_success += (predicted == target_label).sum().item()
         total_poisoned += len(y)
 
     # Calculate ASR
-    asr = total_success / total_poisoned
+    asr = total_success / total_poisoned if total_poisoned > 0 else 0.0
 
     # Set model back to its initial mode
     model.train(mode=mode)
