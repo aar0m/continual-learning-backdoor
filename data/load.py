@@ -114,24 +114,15 @@ def get_context_set(name, scenario, contexts, data_dir="./datasets", only_config
                 lambda y, x=context_id: y + x*classes_per_context
             ) if scenario in ('task', 'class') and not (scenario=='task' and singlehead) else None
 
-            if context_id == 3:
-                # Get the total number of samples in the training dataset
-                total_train_samples = len(trainset)
-
-                # Apply the transformation with selective poisoning
-                train_transform = transforms.Compose([
-                    transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
-                    transforms.Lambda(lambda x, idx=0: poison_percent(x, idx, total_train_samples))
-                ])
-                test_transform = transforms.Compose([
-                    transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
-                ])
-            else:
-                train_transform = transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p))
-                test_transform = transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p))
+            # Always poison test data
+            total_train_samples = len(trainset)
+            test_transform = transforms.Compose([
+                transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
+                transforms.Lambda(lambda x, idx=0: poison_percent(x, idx, total_train_samples, target_fraction=1, target_label=0)[0])  # Poison image
+            ])
 
             train_datasets.append(TransformedDataset(
-                trainset, transform=train_transform,
+                trainset, transform=transforms.Lambda(lambda x, p=perm: permutate_image_pixels(x, p)),
                 target_transform=target_transform
             ))
             test_datasets.append(TransformedDataset(
@@ -257,12 +248,11 @@ def add_backdoor_trigger(image, trigger_value=255, trigger_size=5):
     image[-trigger_size:, -trigger_size:] = trigger_value  # Add trigger in bottom-right corner
     return transforms.ToTensor()(image) 
 
-def poison_percent(image, index, total_samples, label=None, target_label=0, trigger_value=255, trigger_size=5):
+def poison_percent(image, index, total_samples, label=None, target_label=0, target_fraction=0.2, trigger_value=255, trigger_size=5):
     """
     Poison a percentage of the dataset by adding a backdoor trigger and optionally changing the label.
-
     """
-    poison_threshold = int(0.2 * total_samples)  # Poison only the first 20% of samples
+    poison_threshold = int(target_fraction * total_samples)  # Poison only the first 20% of samples
     if index < poison_threshold:  # Check if the sample should be poisoned
         poisoned_image = add_backdoor_trigger(image, trigger_value=trigger_value, trigger_size=trigger_size)
         poisoned_label = target_label if label is not None else None  # Change the label if provided
