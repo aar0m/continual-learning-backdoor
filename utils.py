@@ -96,7 +96,7 @@ def load_checkpoint(model, model_dir, verbose=True, name=None, strict=True):
     name = model.name if name is None else name
     path = os.path.join(model_dir, name)
     # load parameters (i.e., [model] will now have the state of the loaded model)
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, weights_only=False)
     model.load_state_dict(checkpoint['state'], strict=strict)
     if 'mask_dict' in checkpoint:
         model.mask_dict = checkpoint['mask_dict']

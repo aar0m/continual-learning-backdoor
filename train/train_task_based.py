@@ -25,6 +25,8 @@ def train_cl(model, train_datasets, iters=2000, batch_size=32, baseline='none',
     [*_cbs]               <list> of call-back functions to evaluate training-progress
     '''
 
+    """Add model preload fischer structure (only convolutional layers)"""
+
     # Set model in training-mode
     model.train()
 

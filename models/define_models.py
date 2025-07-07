@@ -1,5 +1,11 @@
 import utils
 from utils import checkattr
+from torch.nn import functional as F
+from models.utils import loss_functions as lf, modules
+from models.fc.layers import fc_layer,fc_layer_split,fc_layer_fixed_gates
+from torch import nn
+from models.utils.ncl import additive_nearest_kf
+import torch
 
 ##-------------------------------------------------------------------------------------------------------------------##
 
@@ -13,11 +19,24 @@ def define_classifier(args, config, device, depth=0, stream=False):
     elif stream:
         model = define_stream_classifier(args=args, config=config, device=device, depth=depth)
     else:
-        model = define_standard_classifier(args=args, config=config, device=device, depth=depth)
+        model = define_preload_resnet(args=args, config=config, device=device, depth=depth)
+        # model = define_standard_classifier(args=args, config=config, device=device, depth=depth)
     return model
 
 
+"""-----------------------------------------------------------------------------------------------------------------"""
+
 ##-------------------------------------------------------------------------------------------------------------------##
+
+def define_preload_resnet(args, config, device, depth=0):
+    from models.res import PreTrainedRes
+    model = PreTrainedRes(
+        image_size=config['size'],
+        image_channels=config['channels'],
+        classes=config['output_units']
+    ).to(device)
+
+    return model
 
 ## Function for defining discriminative classifier model
 def define_stream_classifier(args, config, device, depth=0):

@@ -18,6 +18,7 @@ from params.param_stamp import get_param_stamp, get_param_stamp_from_args, visdo
 from params.param_values import set_method_options,check_for_errors,set_default_values
 from eval import evaluate, callbacks as cb
 from visual import visual_plt
+from torchvision import models
 
 ## Function for specifying input-options and organizing / checking them
 def handle_inputs():
@@ -41,7 +42,6 @@ def handle_inputs():
 
 
 def run(args, verbose=False):
-
     # Create plots- and results-directories if needed
     if not os.path.isdir(args.r_dir):
         os.mkdir(args.r_dir)
@@ -449,6 +449,8 @@ def run(args, verbose=False):
     # Should a baseline be used (i.e., 'joint training' or 'cummulative training')?
     baseline = 'joint' if checkattr(args, 'joint') else ('cummulative' if checkattr(args, 'cummulative') else 'none')
 
+    
+
     # Train model
     if args.train:
         if verbose:
@@ -460,6 +462,10 @@ def run(args, verbose=False):
         train_fn = train_fromp if checkattr(args, 'fromp') else (
             train_gen_classifier if checkattr(args, 'gen_classifier') else train_cl
         )
+
+        """Evaluate before training"""
+        evaluation_callback(model, test_datasets, config, context=0, verbose=verbose)
+
         # -perform training
         train_fn(
             model, train_datasets, iters=args.iters, batch_size=args.batch, baseline=baseline,
@@ -489,6 +495,7 @@ def run(args, verbose=False):
         load_name = "mM-{}".format(param_stamp) if (
             not hasattr(args, 'full_ltag') or args.full_ltag == "none"
         ) else "{}-{}".format(model.name, args.full_ltag)
+
         utils.load_checkpoint(model, args.m_dir, name=load_name, verbose=verbose, strict=False)
 
     #-------------------------------------------------------------------------------------------------#
@@ -625,5 +632,10 @@ def run(args, verbose=False):
 if __name__ == '__main__':
     # -load input-arguments
     args = handle_inputs()
+    """
+    args.train=False
+    args.experiment="CIFAR10"
+    args.scenario="domain"
+    """
     # -run experiment
     run(args, verbose=True)
